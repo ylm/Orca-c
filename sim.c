@@ -730,53 +730,18 @@ BEGIN_DUAL_PHASE_1(kill)
 END_PHASE
 
 BEGIN_DUAL_PHASE_0(loop)
-  REALIZE_DUAL;
-  BEGIN_DUAL_PORTS
-    PORT(0, -1, IN | HASTE);
-  END_PORTS
-  if (IS_AWAKE && DUAL_IS_ACTIVE) {
-    Usz len = index_of(PEEK(0, -1)) + 1;
-    I32 len_data[1];
-    len_data[0] = (I32)len;
-    STORE(len_data);
-    if (len > width - x - 1)
-      len = width - x - 1;
-    Mark* m = mbuffer + y * width + x + 1;
-    for (Usz i = 0; i < len; ++i) {
-      m[i] |= Mark_flag_lock;
+  if (PEEK(-1, 0) == '*' || PEEK(0, -1) == '*') {
+    POKE(0, 0, '*');
+  } else {
+    if (PEEK(0, 1) == '*') {
+      POKE(0, 1, This_oper_char);
+    }
+    if (PEEK(1, 0) == '*') {
+      POKE(1, 0, This_oper_char);
     }
   }
 END_PHASE
 BEGIN_DUAL_PHASE_1(loop)
-  REALIZE_DUAL;
-  STOP_IF_DUAL_INACTIVE;
-  I32 len_data[1];
-  // todo should at least stun the 1 column if columns is 1
-  if (LOAD(len_data) && len_data[0] >= 0) {
-    Usz len = (Usz)len_data[0];
-    if (len > width - x - 1)
-      len = width - x - 1;
-    if (len == 0)
-      return;
-    if (len > 36)
-      len = 36;
-    Glyph buff[36];
-    Glyph* gs = gbuffer + y * width + x + 1;
-    Glyph hopped = *gs;
-    // ORCA_MEMCPY(buff, gs + 1, len - 1);
-    for (Usz i = 0; i < len; ++i) {
-      buff[i] = gs[i + 1];
-    }
-    buff[len - 1] = hopped;
-    // ORCA_MEMCPY(gs, buff, len);
-    for (Usz i = 0; i < len; ++i) {
-      gs[i] = buff[i];
-    }
-    Mark* m = mbuffer + y * width + x + 1;
-    for (Usz i = 0; i < len; ++i) {
-      *m |= Mark_flag_sleep;
-    }
-  }
 END_PHASE
 
 BEGIN_DUAL_PHASE_0(modulo)
