@@ -23,6 +23,7 @@
 #include <jack/ringbuffer.h>
 #include <jack/midiport.h>
 #define JACK_RINGBUFFER_SIZE (16384) // Default size for ringbuffer
+#define JACKMIDI_PORTS 16
 #endif
 
 #if NCURSES_VERSION_PATCH < 20081122
@@ -775,7 +776,7 @@ struct jack_orca_midi_event{
 typedef struct {
   Midi_mode_type type;
   jack_client_t *client;
-  jack_port_t *output_port; //Put the ports in an array
+  jack_port_t *output_port[JACKMIDI_PORTS];
   jack_ringbuffer_t *jack_rb;
 } Midi_mode_jackmidi;
 static bool jackmidi_is_initialized = false;
@@ -885,10 +886,14 @@ static int orca_jack_process(jack_nframes_t nframes, void *arg) {
   Midi_mode *mm = (Midi_mode*)arg;
   jack_nframes_t start_frame = jack_last_frame_time(mm->jackmidi.client);
   // TODO: Select port based on MIDI channel
-  void* port_buf = jack_port_get_buffer(mm->jackmidi.output_port, nframes);
+  void *port_buf[16];
+  int idx;
   unsigned char* buffer;
   struct jack_orca_midi_event midi_event;
-  jack_midi_clear_buffer(port_buf);
+  for (idx = 0; idx < JACKMIDI_PORTS; idx++) {
+    port_buf[idx]= jack_port_get_buffer(mm->jackmidi.output_port[idx], nframes);
+    jack_midi_clear_buffer(port_buf[idx]);
+  }
 
   while(jack_ringbuffer_read_space(mm->jackmidi.jack_rb) > sizeof(struct jack_orca_midi_event)) {
     jack_ringbuffer_peek(mm->jackmidi.jack_rb, (char *)&midi_event, sizeof(struct jack_orca_midi_event));
@@ -896,8 +901,9 @@ static int orca_jack_process(jack_nframes_t nframes, void *arg) {
       if (midi_event.event_timestamp < start_frame) {
         midi_event.event_timestamp = start_frame;
       }
+      idx = 0xf & midi_event.event_data[0];
       jack_ringbuffer_read_advance(mm->jackmidi.jack_rb, sizeof(struct jack_orca_midi_event));
-      buffer = jack_midi_event_reserve(port_buf, midi_event.event_timestamp - start_frame, 3);
+      buffer = jack_midi_event_reserve(port_buf[idx], midi_event.event_timestamp - start_frame, 3);
       buffer[2] = midi_event.event_data[2];
       buffer[1] = midi_event.event_data[1];
       buffer[0] = midi_event.event_data[0];
@@ -909,12 +915,16 @@ end_loop:
   return 0;
 }
 staticni int midi_mode_init_jackmidi(Midi_mode *mm) {
+  char port_name[16];
   if((mm->jackmidi.client = jack_client_open("orca", JackNullOption, NULL)) == 0) {
     fprintf (stderr, "JACK server not running?\n");
     return 1;
   }
   jack_set_process_callback(mm->jackmidi.client, orca_jack_process, mm);
-  mm->jackmidi.output_port = jack_port_register(mm->jackmidi.client, "out", JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput, 0);
+  for (int idx = 0; idx < JACKMIDI_PORTS; idx++) {
+	  snprintf(port_name, 16, "out_%d", idx);
+	  mm->jackmidi.output_port[idx] = jack_port_register(mm->jackmidi.client, port_name, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput, 0);
+  }
   mm->jackmidi.jack_rb = jack_ringbuffer_create(JACK_RINGBUFFER_SIZE);
   if (jack_activate(mm->jackmidi.client)) {
     fprintf (stderr, "cannot activate client");
